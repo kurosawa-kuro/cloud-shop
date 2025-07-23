@@ -1,0 +1,321 @@
+services:
+  # Infrastructure Services
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    hostname: zookeeper-stg
+    container_name: zookeeper-stg
+    ports:
+      - "2183:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo 'ruok' | nc localhost 2181"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    hostname: kafka-stg
+    container_name: kafka-stg
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9094:9092"
+      - "9103:9101"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper-stg:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-stg:29092,PLAINTEXT_HOST://localhost:9094
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: localhost
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    healthcheck:
+      test: ["CMD", "bash", "-c", "kafka-broker-api-versions --bootstrap-server localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL for staging environment
+  postgres:
+    image: postgres:15
+    container_name: cloud-shop-postgres-stg
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-cloud-shop}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_in_production}
+      POSTGRES_MULTIPLE_DATABASES: cloud-shop_auth_stg,cloud-shop_users_stg,cloud-shop_products_stg,cloud-shop_cart_stg,cloud-shop_orders_stg,cloud-shop_payments_stg,keycloak_stg
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres-stg-data:/var/lib/postgresql/data
+      - ./scripts/create-multiple-postgresql-databases.sh:/docker-entrypoint-initdb.d/create-multiple-postgresql-databases.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cloud-shop"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Keycloak Server
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0
+    container_name: keycloak-stg
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak_stg
+      KC_DB_USERNAME: ${KC_DB_USERNAME:-cloud-shop}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:-change_me_in_production}
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_PORT: 8183
+      KC_HOSTNAME_STRICT: false
+      KC_HOSTNAME_STRICT_HTTPS: false
+      KC_LOG_LEVEL: info
+      KC_METRICS_ENABLED: true
+      KC_HEALTH_ENABLED: true
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-change_me_in_production}
+    ports:
+      - "8183:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Cloud-Shop Microservices
+  message-service:
+    build:
+      context: ./services/message
+      dockerfile: Dockerfile
+    container_name: message-service-stg
+    ports:
+      - "9012:9010"
+    environment:
+      - NODE_ENV=staging
+      - PORT=9010
+      - KAFKA_BROKERS=kafka-stg:29092
+      - KAFKA_GROUP_ID=message-stg
+      - KAFKA_TOPIC_INPUT=send-communication
+      - KAFKA_TOPIC_OUTPUT=communication-sent
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./services/message:/app
+      - ./shared:/app/shared
+      - /app/node_modules
+    command: npm start
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth/Dockerfile
+    container_name: auth-service-stg
+    ports:
+      - "8101:8081"
+    environment:
+      - NODE_ENV=staging
+      - PORT=8081
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-cloud-shop}:${POSTGRES_PASSWORD:-change_me_in_production}@postgres:5432/cloud_shop_stg?schema=auth
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=cloud-shop
+      - KEYCLOAK_CLIENT_ID=cloud-shop-client
+      - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET:-change_me_in_production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    volumes:
+      - ./services/auth:/app/services/auth
+      - ./shared:/app/shared
+    command: npm start
+
+  users-service:
+    build:
+      context: .
+      dockerfile: services/users/Dockerfile
+    container_name: users-service-stg
+    ports:
+      - "8102:8082"
+    environment:
+      - NODE_ENV=staging
+      - PORT=8082
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-cloud-shop}:${POSTGRES_PASSWORD:-change_me_in_production}@postgres:5432/cloud_shop_stg?schema=users
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./services/users:/app/services/users
+      - ./shared:/app/shared
+    command: npm start
+
+  gateway-service:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
+      network: host
+    container_name: gateway-service-stg
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    ports:
+      - "8074:8072"
+    environment:
+      - NODE_ENV=staging
+      - PORT=8072
+      - JWT_SECRET=${JWT_SECRET:-change_me_to_secure_32_char_minimum_secret}
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=cloud-shop
+      - KEYCLOAK_CLIENT_ID=cloud-shop-gateway
+      - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET:-change_me_in_production}
+      - AUTH_RATE_LIMIT_REQUESTS=10
+      - AUTH_RATE_LIMIT_WINDOW=60
+      - AUTH_RATE_LIMIT_BLOCK=300
+      - GENERAL_RATE_LIMIT_REQUESTS=100
+      - GENERAL_RATE_LIMIT_WINDOW=60
+      - GENERAL_RATE_LIMIT_BLOCK=60
+      - AUTH_SERVICE_URL=http://auth-service:8081
+      - USERS_SERVICE_URL=http://users-service:8082
+      - MESSAGE_SERVICE_URL=http://message-service:9010
+      - PRODUCTS_SERVICE_URL=http://products-service:8083
+      - CART_SERVICE_URL=http://cart-service:8084
+      - ORDERS_SERVICE_URL=http://orders-service:8085
+      - PAYMENTS_SERVICE_URL=http://payments-service:8086
+    depends_on:
+      - postgres
+      - keycloak
+      - auth-service
+      - users-service
+      - message-service
+      - products-service
+      - cart-service
+      - orders-service
+      - payments-service
+    volumes:
+      - ./services/gateway:/app
+      - ./shared:/app/shared
+    command: npm start
+
+  products-service:
+    build:
+      context: .
+      dockerfile: services/products/Dockerfile
+    container_name: products-service-stg
+    ports:
+      - "8103:8083"
+    environment:
+      - NODE_ENV=staging
+      - PORT=8083
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-cloud-shop}:${POSTGRES_PASSWORD:-change_me_in_production}@postgres:5432/cloud_shop_stg?schema=products
+      - AUTH_SERVICE_URL=http://auth-service:8081
+      - USERS_SERVICE_URL=http://users-service:8082
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./services/products:/app/services/products
+      - ./shared:/app/shared
+    command: npm start
+
+  cart-service:
+    build:
+      context: .
+      dockerfile: services/cart/Dockerfile
+    container_name: cart-service-stg
+    ports:
+      - "8104:8084"
+    environment:
+      - NODE_ENV=staging
+      - PORT=8084
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-cloud-shop}:${POSTGRES_PASSWORD:-change_me_in_production}@postgres:5432/cloud_shop_stg?schema=cart
+      - AUTH_SERVICE_URL=http://auth-service:8081
+      - USERS_SERVICE_URL=http://users-service:8082
+      - PRODUCTS_SERVICE_URL=http://products-service:8083
+    depends_on:
+      postgres:
+        condition: service_healthy
+      products-service:
+        condition: service_started
+    volumes:
+      - ./services/cart:/app/services/cart
+      - ./shared:/app/shared
+    command: npm start
+
+  orders-service:
+    build:
+      context: .
+      dockerfile: services/orders/Dockerfile
+    container_name: orders-service-stg
+    ports:
+      - "8105:8085"
+    environment:
+      - NODE_ENV=staging
+      - PORT=8085
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-cloud-shop}:${POSTGRES_PASSWORD:-change_me_in_production}@postgres:5432/cloud_shop_stg?schema=orders
+      - AUTH_SERVICE_URL=http://auth-service:8081
+      - USERS_SERVICE_URL=http://users-service:8082
+      - PRODUCTS_SERVICE_URL=http://products-service:8083
+      - CART_SERVICE_URL=http://cart-service:8084
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cart-service:
+        condition: service_started
+      products-service:
+        condition: service_started
+    volumes:
+      - ./services/orders:/app/services/orders
+      - ./shared:/app/shared
+    command: npm start
+
+  payments-service:
+    build:
+      context: .
+      dockerfile: services/payments/Dockerfile
+    container_name: payments-service-stg
+    ports:
+      - "8106:8086"
+    environment:
+      - NODE_ENV=staging
+      - PORT=8086
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-cloud-shop}:${POSTGRES_PASSWORD:-change_me_in_production}@postgres:5432/cloud_shop_stg?schema=payments
+      - AUTH_SERVICE_URL=http://auth-service:8081
+      - USERS_SERVICE_URL=http://users-service:8082
+      - ORDERS_SERVICE_URL=http://orders-service:8085
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-sk_test_dummy_key_for_testing}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-whsec_dummy_webhook_secret}
+      - KAFKA_BROKERS=kafka-stg:29092
+      - KAFKA_GROUP_ID_PAYMENTS=payment-events-stg
+      - KAFKA_TOPIC_PAYMENTS=payment-events
+      - KAFKA_TOPIC_ORDERS=order-events
+      - KAFKA_TOPIC_REFUNDS=refund-events
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      orders-service:
+        condition: service_started
+    volumes:
+      - ./services/payments:/app/services/payments
+      - ./shared:/app/shared
+    command: npm start
+
+volumes:
+  postgres-stg-data:
+
+networks:
+  default:
+    name: cloud-shop-stg-network

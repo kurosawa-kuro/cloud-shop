@@ -1,0 +1,48 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["products"]
+}
+
+model Product {
+  id                Int               @id @default(autoincrement())
+  name              String
+  price             Float
+  rating            Float             @default(0)
+  image             String?
+  description       String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  productCategories ProductCategory[]
+
+  @@map("products")
+  @@schema("products")
+}
+
+model Category {
+  id                Int               @id @default(autoincrement())
+  name              String            @unique
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  productCategories ProductCategory[]
+
+  @@map("categories")
+  @@schema("products")
+}
+
+model ProductCategory {
+  productId  Int
+  categoryId Int
+  assignedAt DateTime @default(now())
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([productId, categoryId])
+  @@map("product_categories")
+  @@schema("products")
+}

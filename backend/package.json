@@ -1,0 +1,42 @@
+{
+  "name": "cloud-shop-microservices",
+  "version": "1.0.0",
+  "description": "Cloud-Shop マイクロサービスアーキテクチャ",
+  "private": true,
+  "workspaces": [
+    "services/auth",
+    "services/users",
+    "services/gateway",
+    "services/products",
+    "services/cart",
+    "services/orders",
+    "services/payments",
+    "services/analytics",
+    "services/content",
+    "services/message",
+    "shared"
+  ],
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=services/*\"",
+    "test": "npm run test --workspaces",
+    "install-all": "npm install --workspaces",
+    "build": "npm run build --workspaces",
+    "lint": "npm run lint --workspaces",
+    "clean": "npm run clean --workspaces",
+    "prisma:generate": "npm run prisma:generate --workspaces"
+  },
+  "keywords": [
+    "microservices",
+    "express",
+    "nodejs",
+    "ecommerce"
+  ],
+  "author": "Cloud-Shop Team",
+  "license": "MIT",
+  "dependencies": {
+    "zod": "^4.0.5"
+  }
+}
