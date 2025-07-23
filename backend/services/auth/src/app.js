@@ -11,6 +11,7 @@ const path = require('path');
 const { config, middleware, logger } = require('../../../shared');
 const { getConfig, validateStartupConfig } = config;
 const { errorHandler, correlationId, responseHelpers } = middleware;
+const createTimeoutMiddleware = require('../../../shared/middleware/timeoutMiddleware');
 
 // Validate startup configuration
 try {
@@ -27,18 +28,27 @@ const app = express();
 
 // Security middleware
 app.use(helmet(serviceConfig.security.helmet));
+
+// CORS configuration
 app.use(cors(serviceConfig.cors));
+
+// Body parsing middleware
 app.use(express.json());
 
-// Shared middleware
+// Request processing middleware
 app.use(correlationId);
 app.use(responseHelpers);
+app.use(createTimeoutMiddleware(serviceConfig.timeout || 30000));
 
 const openApiSpec = YAML.load(fs.readFileSync(path.join(__dirname, '../openapi.yaml'), 'utf8'));
 
 const api = new OpenAPIBackend({
   definition: openApiSpec,
   handlers: {
+    login: require('./controllers/authController').login,
+    register: require('./controllers/authController').register,
+    confirm: require('./controllers/authController').confirm,
+    logout: require('./controllers/authController').logout,
     verifyToken: require('./controllers/authController').verifyToken,
     refreshToken: require('./controllers/authController').refreshToken,
     revokeToken: require('./controllers/authController').revokeToken,
@@ -52,8 +62,6 @@ const api = new OpenAPIBackend({
 });
 
 api.init();
-
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpec));
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -74,6 +82,7 @@ app.get('/actuator/health', (req, res) => {
   }, 200, 'Auth service is healthy');
 });
 
+// Error handling middleware
 app.use(errorHandler);
 
 module.exports = app;

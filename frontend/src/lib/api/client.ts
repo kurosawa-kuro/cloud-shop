@@ -40,8 +40,8 @@ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8072';
 
 // 認証関連API
 export const authAPI = {
-  register: async (email: string, password: string) => {
-    return executeRequest('/cloud-shop/auth/register', 'POST', { email, password });
+  register: async (email: string, password: string, name: string) => {
+    return executeRequest('/cloud-shop/auth/register', 'POST', { email, password, name });
   },
   login: async (email: string, password: string) => {
     return executeRequest('/cloud-shop/auth/login', 'POST', { email, password }, { credentials: 'include' });
@@ -51,28 +51,37 @@ export const authAPI = {
   },
   logout: async () => {
     return executeRequest('/cloud-shop/auth/logout', 'POST', undefined, { credentials: 'include' });
+  },
+  verify: async () => {
+    return executeRequest('/cloud-shop/auth/verify', 'POST');
+  },
+  refresh: async (refreshToken: string) => {
+    return executeRequest('/cloud-shop/auth/refresh', 'POST', { refreshToken });
+  },
+  revoke: async (token: string) => {
+    return executeRequest('/cloud-shop/auth/revoke', 'POST', { token });
   }
 };
 
 // カート管理API
 export const cartAPI = {
   addToCart: async (productId: string) => {
-    return executeRequest('/cloud-shop/carts', 'POST', { productId });
+    return executeRequest('/cloud-shop/cart', 'POST', { productId });
   },
   readdToCart: async (productId: string) => {
-    return executeRequest('/cloud-shop/carts/readd-items', 'POST', { productId });
+    return executeRequest('/cloud-shop/cart/readd-items', 'POST', { productId });
   },
   getCartItems: async (): Promise<{ cartItems: CartItem[] }> => {
-    return executeRequest<{ cartItems: CartItem[] }>('/cloud-shop/carts', 'GET');
+    return executeRequest<{ cartItems: CartItem[] }>('/cloud-shop/cart', 'GET');
   },
   updateCartItemQuantity: async (cartItemId: number, quantity: number) => {
-    return executeRequest(`/cloud-shop/carts/${cartItemId}`, 'PATCH', { quantity });
+    return executeRequest(`/cloud-shop/cart/${cartItemId}`, 'PATCH', { quantity });
   },
   removeCartItem: async (cartItemId: number) => {
-    return executeRequest(`/cloud-shop/carts/${cartItemId}`, 'DELETE');
+    return executeRequest(`/cloud-shop/cart/${cartItemId}`, 'DELETE');
   },
   getCartSummary: async (): Promise<{ subtotal: number }> => {
-    return executeRequest('/cloud-shop/carts/summary', 'GET');
+    return executeRequest('/cloud-shop/cart/summary', 'GET');
   }
 };
 
@@ -102,13 +111,13 @@ export const checkoutAPI = {
 // 購入履歴管理API
 export const orderAPI = {
   fetchorders: async (): Promise<{ orders: Order[] }> => {
-    return executeRequest('/cloud-shop/order', 'GET');
+    return executeRequest('/cloud-shop/orders', 'GET');
   },
   return: async (orderId: string, productId: string) => {
-    return executeRequest('/cloud-shop/order/return', 'POST', { orderId, productId });
+    return executeRequest('/cloud-shop/orders/return', 'POST', { orderId, productId });
   },
   review: async (orderId: string, productId: string) => {
-    return executeRequest('/cloud-shop/order/review', 'POST', { orderId, productId });
+    return executeRequest('/cloud-shop/orders/review', 'POST', { orderId, productId });
   }
 };
 
@@ -128,7 +137,7 @@ export const productAPI = {
 // 閲覧履歴API
 export const historyAPI = {
   recordView: async (productId: string, userId: string) => {
-    return executeRequest('/cloud-shop/view-history', 'POST', { productId }, {
+    return executeRequest('/cloud-shop/analytics/view-history', 'POST', { productId }, {
       headers: { 'x-user-id': userId }
     });
   }
@@ -160,7 +169,7 @@ interface TopPageResponse {
 
 export const topAPI = {
   getTopPageDisplay: async (): Promise<TopPageResponse> => {
-    return executeRequest<TopPageResponse>("/cloud-shop/top", "GET", undefined, { cache: "no-store" });
+    return executeRequest<TopPageResponse>("/cloud-shop/content/top", "GET", undefined, { cache: "no-store" });
   }
 };
 

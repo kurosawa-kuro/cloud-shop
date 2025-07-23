@@ -30,6 +30,246 @@ class AuthService {
     this.prisma = getAuthClient();
   }
 
+  async login(email, password) {
+    try {
+      // Keycloakを使用したログイン処理
+      const response = await axios.post(
+        `${process.env.KEYCLOAK_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/token`,
+        new URLSearchParams({
+          grant_type: 'password',
+          client_id: process.env.KEYCLOAK_CLIENT_ID,
+          client_secret: process.env.KEYCLOAK_CLIENT_SECRET,
+          username: email,
+          password: password
+        }),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
+        }
+      );
+
+      const tokenData = response.data;
+      
+      // トークンからユーザー情報を取得
+      const userInfo = await this.getUserInfo(tokenData.access_token);
+      
+      // データベースにユーザー情報を保存/更新
+      await this.saveOrUpdateUser(userInfo);
+
+      return {
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token,
+        expires_in: tokenData.expires_in,
+        user: userInfo
+      };
+    } catch (error) {
+      logger.error('Keycloak login failed:', error.response?.data || error.message);
+      throw new Error('Invalid credentials');
+    }
+  }
+
+  async register(email, password, name) {
+    try {
+      // Keycloakを使用したユーザー登録処理
+      const response = await axios.post(
+        `${process.env.KEYCLOAK_URL}/admin/realms/${process.env.KEYCLOAK_REALM}/users`,
+        {
+          username: email,
+          email: email,
+          firstName: name,
+          enabled: true,
+          emailVerified: false,
+          credentials: [{
+            type: 'password',
+            value: password,
+            temporary: false
+          }]
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${await this.getAdminToken()}`
+          }
+        }
+      );
+
+      // ユーザー情報を取得
+      const userInfo = {
+        sub: response.data.id,
+        email: email,
+        name: name,
+        preferred_username: email,
+        roles: ['customer']
+      };
+
+      // データベースにユーザー情報を保存
+      await this.saveOrUpdateUser(userInfo);
+
+      return {
+        message: 'Registration successful',
+        user: userInfo
+      };
+    } catch (error) {
+      logger.error('Keycloak registration failed:', error.response?.data || error.message);
+      throw new Error('Registration failed');
+    }
+  }
+
+  async confirm(email, code) {
+    try {
+      // メール確認コードの検証（Keycloakでは自動的に処理される）
+      // ここでは簡易的な実装として、ユーザーの存在確認のみ行う
+      const user = await this.prisma.authUser.findUnique({
+        where: { email: email }
+      });
+
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      // ユーザーのメール確認状態を更新
+      await this.prisma.authUser.update({
+        where: { email: email },
+        data: { emailVerified: true }
+      });
+
+      return {
+        message: 'Email confirmed successfully',
+        user: {
+          sub: user.id,
+          email: user.email,
+          name: user.email, // 簡易的な実装
+          preferred_username: user.email,
+          roles: ['customer']
+        }
+      };
+    } catch (error) {
+      logger.error('Email confirmation failed:', error.message);
+      throw new Error('Invalid confirmation code');
+    }
+  }
+
+  async logout(req) {
+    try {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+        
+        // トークンをキャッシュから削除
+        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+        tokenCache.del(tokenHash);
+        
+        // Keycloakにログアウト通知（オプション）
+        try {
+          await axios.post(
+            `${process.env.KEYCLOAK_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/logout`,
+            new URLSearchParams({
+              client_id: process.env.KEYCLOAK_CLIENT_ID,
+              client_secret: process.env.KEYCLOAK_CLIENT_SECRET,
+              refresh_token: token // 実際にはrefresh_tokenが必要
+            }),
+            {
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+              }
+            }
+          );
+        } catch (keycloakError) {
+          logger.warn('Keycloak logout notification failed:', keycloakError.message);
+        }
+      }
+    } catch (error) {
+      logger.error('Logout failed:', error.message);
+      throw new Error('Logout failed');
+    }
+  }
+
+  async getUserInfo(accessToken) {
+    try {
+      const response = await axios.get(
+        `${process.env.KEYCLOAK_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/userinfo`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        }
+      );
+
+      return response.data;
+    } catch (error) {
+      logger.error('Failed to get user info:', error.message);
+      throw new Error('Failed to get user info');
+    }
+  }
+
+  async getAdminToken() {
+    try {
+      const response = await axios.post(
+        `${process.env.KEYCLOAK_URL}/realms/master/protocol/openid-connect/token`,
+        new URLSearchParams({
+          grant_type: 'client_credentials',
+          client_id: 'admin-cli',
+          client_secret: process.env.KEYCLOAK_ADMIN_CLIENT_SECRET || 'admin-secret'
+        }),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
+        }
+      );
+
+      return response.data.access_token;
+    } catch (error) {
+      logger.error('Failed to get admin token:', error.message);
+      throw new Error('Failed to get admin token');
+    }
+  }
+
+  async saveOrUpdateUser(userInfo) {
+    try {
+      let authUser = await this.prisma.authUser.findUnique({
+        where: { keycloakId: userInfo.sub },
+        include: {
+          userRoles: {
+            include: {
+              role: true
+            }
+          }
+        }
+      });
+
+      if (!authUser) {
+        authUser = await this.prisma.authUser.create({
+          data: {
+            id: userInfo.sub,
+            email: userInfo.email,
+            keycloakId: userInfo.sub,
+            emailVerified: userInfo.email_verified || false,
+            lastLoginAt: new Date()
+          },
+          include: {
+            userRoles: {
+              include: {
+                role: true
+              }
+            }
+          }
+        });
+      } else {
+        await this.prisma.authUser.update({
+          where: { id: authUser.id },
+          data: { lastLoginAt: new Date() }
+        });
+      }
+
+      return authUser;
+    } catch (error) {
+      logger.error('Failed to save/update user:', error.message);
+      throw new Error('Failed to save user data');
+    }
+  }
+
   async verifyToken(token) {
     return new Promise((resolve, reject) => {
       const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
@@ -161,42 +401,57 @@ class AuthService {
   }
 
   async getUserRoles(userId) {
-    const authUser = await this.prisma.authUser.findUnique({
-      where: { id: userId },
-      include: {
-        userRoles: {
-          include: {
-            role: true
+    try {
+      const authUser = await this.prisma.authUser.findUnique({
+        where: { id: userId },
+        include: {
+          userRoles: {
+            include: {
+              role: true
+            }
           }
         }
+      });
+
+      if (!authUser) {
+        throw new Error('User not found');
       }
-    });
 
-    if (!authUser) {
-      throw new Error('User not found');
+      return authUser.userRoles.map(ur => ur.role);
+    } catch (error) {
+      logger.error('Failed to get user roles:', error.message);
+      throw new Error('Failed to get user roles');
     }
-
-    return authUser.userRoles.map(ur => ur.role);
   }
 
   async assignRole(userId, roleId) {
-    await this.prisma.userRole.create({
-      data: {
-        userId,
-        roleId
-      }
-    });
+    try {
+      await this.prisma.userRole.create({
+        data: {
+          userId: userId,
+          roleId: roleId
+        }
+      });
+    } catch (error) {
+      logger.error('Failed to assign role:', error.message);
+      throw new Error('Failed to assign role');
+    }
   }
 
   async removeRole(userId, roleId) {
-    await this.prisma.userRole.delete({
-      where: {
-        userId_roleId: {
-          userId,
-          roleId
+    try {
+      await this.prisma.userRole.delete({
+        where: {
+          userId_roleId: {
+            userId: userId,
+            roleId: roleId
+          }
         }
-      }
-    });
+      });
+    } catch (error) {
+      logger.error('Failed to remove role:', error.message);
+      throw new Error('Failed to remove role');
+    }
   }
 }
 

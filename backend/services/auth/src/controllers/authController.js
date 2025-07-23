@@ -6,6 +6,64 @@ const logger = require('../../../../shared/utils/logger');
 const authService = new AuthService();
 
 module.exports = {
+  login: async (c, req, res) => {
+    try {
+      const { email, password } = c.request.requestBody;
+      
+      // Keycloakを使用したログイン処理
+      const result = await authService.login(email, password);
+      
+      return res.standardResponse(result, 200, 'Login successful');
+    } catch (error) {
+      logger.error('Login failed:', { error: error.message, correlationId: req.correlationId });
+      const errorResponse = createStandardError(401, 'UNAUTHORIZED', 'Invalid credentials', req.url);
+      return res.status(401).json(errorResponse);
+    }
+  },
+
+  register: async (c, req, res) => {
+    try {
+      const { email, password, name } = c.request.requestBody;
+      
+      // Keycloakを使用したユーザー登録処理
+      const result = await authService.register(email, password, name);
+      
+      return res.standardResponse(result, 201, 'Registration successful');
+    } catch (error) {
+      logger.error('Registration failed:', { error: error.message, correlationId: req.correlationId });
+      const errorResponse = createStandardError(400, 'BAD_REQUEST', 'Registration failed', req.url);
+      return res.status(400).json(errorResponse);
+    }
+  },
+
+  confirm: async (c, req, res) => {
+    try {
+      const { email, code } = c.request.requestBody;
+      
+      // メール確認コードの検証処理
+      const result = await authService.confirm(email, code);
+      
+      return res.standardResponse(result, 200, 'Confirmation successful');
+    } catch (error) {
+      logger.error('Confirmation failed:', { error: error.message, correlationId: req.correlationId });
+      const errorResponse = createStandardError(400, 'BAD_REQUEST', 'Invalid confirmation code', req.url);
+      return res.status(400).json(errorResponse);
+    }
+  },
+
+  logout: async (c, req, res) => {
+    try {
+      // ログアウト処理（トークンの無効化）
+      await authService.logout(req);
+      
+      return res.standardResponse({ message: 'Logout successful' }, 200, 'Logout successful');
+    } catch (error) {
+      logger.error('Logout failed:', { error: error.message, correlationId: req.correlationId });
+      const errorResponse = createStandardError(401, 'UNAUTHORIZED', 'Logout failed', req.url);
+      return res.status(401).json(errorResponse);
+    }
+  },
+
   verifyToken: async (c, req, res) => {
     try {
       const authHeader = req.headers.authorization;
