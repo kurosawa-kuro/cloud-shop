@@ -1,15 +1,13 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { useRouter } from 'next/navigation';
 import RegisterPage from '@/app/(auth)/register/page';
-import { signUp } from '@/lib/auth/cognito';
+
+// Mock fetch for API calls
+global.fetch = jest.fn();
 
 // モックの設定
 jest.mock('next/navigation', () => ({
   useRouter: jest.fn(),
-}));
-
-jest.mock('@/lib/auth/cognito', () => ({
-  signUp: jest.fn(),
 }));
 
 describe('RegisterPage', () => {
@@ -47,7 +45,10 @@ describe('RegisterPage', () => {
   });
 
   it('正常に登録が完了した場合、確認ページにリダイレクトされること', async () => {
-    (signUp as jest.Mock).mockResolvedValueOnce({});
+    (fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ success: true })
+    });
     
     render(<RegisterPage />);
     
@@ -60,14 +61,20 @@ describe('RegisterPage', () => {
     fireEvent.click(submitButton);
 
     await waitFor(() => {
-      expect(signUp).toHaveBeenCalledWith('test@example.com', 'Password123');
+      expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/auth/register'), expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ email: 'test@example.com', password: 'Password123' })
+      }));
       expect(mockRouter.push).toHaveBeenCalledWith('/confirm?email=test%40example.com');
     });
   });
 
   it('登録に失敗した場合、エラーメッセージが表示されること', async () => {
     const errorMessage = 'ユーザー登録に失敗しました';
-    (signUp as jest.Mock).mockRejectedValueOnce(new Error(errorMessage));
+    (fetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({ error: errorMessage })
+    });
     
     render(<RegisterPage />);
     

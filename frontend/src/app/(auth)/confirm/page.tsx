@@ -34,12 +34,7 @@ function ConfirmForm() {
     } catch (err: unknown) {
       console.error('Confirmation error:', err);
       if (err instanceof Error) {
-        // Cognitoのエラーメッセージをユーザーフレンドリーに変換
-        if (err.name === 'CodeMismatchException') {
-          setError('確認コードが正しくありません。再度お試しください。');
-        } else {
-          setError(err.message || '確認コードの検証に失敗しました');
-        }
+        setError(err.message || '確認コードの検証に失敗しました');
       } else {
         setError('予期せぬエラーが発生しました');
       }

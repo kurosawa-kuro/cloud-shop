@@ -1,5 +1,24 @@
-import { Order } from "@prisma/client";
-import { Product } from "@prisma/client";
+// API Response Types
+interface Order {
+  id: string;
+  userId: string;
+  status: string;
+  totalAmount: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface Product {
+  id: number;
+  name: string;
+  price: number;
+  image: string;
+  description: string;
+  categoryId?: number;
+  stock?: number;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
 
 interface CartItem {
   id: number;
@@ -16,41 +35,44 @@ interface CartItem {
   addedAt?: Date;
 }
 
+// APIベースURLはNext.jsのpublic環境変数のみを参照（windowやtypeof判定は不要）
+const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8081';
+
 // 認証関連API
 export const authAPI = {
   register: async (email: string, password: string) => {
-    return executeRequest('/api/auth/register', 'POST', { email, password });
+    return executeRequest('/auth/register', 'POST', { email, password });
   },
   login: async (email: string, password: string) => {
-    return executeRequest('/api/auth/login', 'POST', { email, password }, { credentials: 'include' });
+    return executeRequest('/auth/login', 'POST', { email, password }, { credentials: 'include' });
   },
   confirm: async (email: string, code: string) => {
-    return executeRequest('/api/auth/confirm', 'POST', { email, code });
+    return executeRequest('/auth/confirm', 'POST', { email, code });
   },
   logout: async () => {
-    return executeRequest('/api/auth/logout', 'POST', undefined, { credentials: 'include' });
+    return executeRequest('/auth/logout', 'POST', undefined, { credentials: 'include' });
   }
 };
 
 // カート管理API
 export const cartAPI = {
   addToCart: async (productId: string) => {
-    return executeRequest('/api/carts', 'POST', { productId });
+    return executeRequest('/carts', 'POST', { productId });
   },
   readdToCart: async (productId: string) => {
-    return executeRequest('/api/carts/readd-items', 'POST', { productId });
+    return executeRequest('/carts/readd-items', 'POST', { productId });
   },
   getCartItems: async (): Promise<{ cartItems: CartItem[] }> => {
-    return executeRequest<{ cartItems: CartItem[] }>('/api/carts', 'GET');
+    return executeRequest<{ cartItems: CartItem[] }>('/carts', 'GET');
   },
   updateCartItemQuantity: async (cartItemId: number, quantity: number) => {
-    return executeRequest(`/api/carts/${cartItemId}`, 'PATCH', { quantity });
+    return executeRequest(`/carts/${cartItemId}`, 'PATCH', { quantity });
   },
   removeCartItem: async (cartItemId: number) => {
-    return executeRequest(`/api/carts/${cartItemId}`, 'DELETE');
+    return executeRequest(`/carts/${cartItemId}`, 'DELETE');
   },
   getCartSummary: async (): Promise<{ subtotal: number }> => {
-    return executeRequest('/api/carts/summary', 'GET');
+    return executeRequest('/carts/summary', 'GET');
   }
 };
 
@@ -65,7 +87,7 @@ export const checkoutAPI = {
     deliveryDate: string,
     paymentMethod: 'credit_card' | 'bank_transfer'
   ) => {
-    return executeRequest('/api/checkout/confirm', 'POST', {
+    return executeRequest('/checkout/confirm', 'POST', {
       name,
       address,
       cardNumber,
@@ -80,34 +102,33 @@ export const checkoutAPI = {
 // 購入履歴管理API
 export const orderAPI = {
   fetchorders: async (): Promise<{ orders: Order[] }> => {
-    return executeRequest('/api/order', 'GET');
+    return executeRequest('/order', 'GET');
   },
   return: async (orderId: string, productId: string) => {
-    return executeRequest('/api/order/return', 'POST', { orderId, productId });
+    return executeRequest('/order/return', 'POST', { orderId, productId });
   },
-
   review: async (orderId: string, productId: string) => {
-    return executeRequest('/api/order/review', 'POST', { orderId, productId });
+    return executeRequest('/order/review', 'POST', { orderId, productId });
   }
 };
 
 // 商品情報API
 export const productAPI = {
   getProducts: async (): Promise<{ products: Product[] }> => {
-    return executeRequest('/api/products', 'GET', undefined, { cache: 'no-store' });
+    return executeRequest('/products', 'GET', undefined, { cache: 'no-store' });
   },
   getProduct: async (productId: string): Promise<{ product: Product }> => {
-    return executeRequest(`/api/products/${productId}`, 'GET', undefined, { cache: 'no-store' });
+    return executeRequest(`/products/${productId}`, 'GET', undefined, { cache: 'no-store' });
   },
   getProductsByCategory: async (categoryId: number): Promise<{ products: Product[] }> => {
-    return executeRequest(`/api/products/category/${categoryId}`, 'GET', undefined, { cache: 'no-store' });
+    return executeRequest(`/products/category/${categoryId}`, 'GET', undefined, { cache: 'no-store' });
   }
 };
 
 // 閲覧履歴API
 export const historyAPI = {
   recordView: async (productId: string, userId: string) => {
-    return executeRequest('/api/view-history', 'POST', { productId }, {
+    return executeRequest('/view-history', 'POST', { productId }, {
       headers: { 'x-user-id': userId }
     });
   }
@@ -139,7 +160,7 @@ interface TopPageResponse {
 
 export const topAPI = {
   getTopPageDisplay: async (): Promise<TopPageResponse> => {
-    return executeRequest<TopPageResponse>("/api/top", "GET", undefined, { cache: "no-store" });
+    return executeRequest<TopPageResponse>("/top", "GET", undefined, { cache: "no-store" });
   }
 };
 
@@ -150,10 +171,7 @@ const executeRequest = async <T = Record<string, unknown>>(
   body?: Record<string, unknown>,
   options?: RequestInit
 ): Promise<T> => {
-  const baseUrl = typeof window !== 'undefined' 
-    ? window.location.origin 
-    : 'http://localhost:3000';
-
+  // baseUrlはバックエンドAPIのURL
   const response = await fetch(`${baseUrl}${endpoint}`, {
     method,
     headers: { 'Content-Type': 'application/json' },

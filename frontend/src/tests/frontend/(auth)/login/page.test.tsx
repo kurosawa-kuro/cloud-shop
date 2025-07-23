@@ -1,16 +1,14 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { useRouter } from 'next/navigation';
 import LoginPage from '@/app/(auth)/login/page';
-import { signIn } from '@/lib/auth/cognito';
 import * as jose from 'jose';
+
+// Mock fetch for API calls
+global.fetch = jest.fn();
 
 // モックの設定
 jest.mock('next/navigation', () => ({
   useRouter: jest.fn()
-}));
-
-jest.mock('@/lib/auth/cognito', () => ({
-  signIn: jest.fn()
 }));
 
 // Zustand storeのモックを修正
@@ -46,10 +44,9 @@ describe('LoginPage', () => {
       sub: 'test-user-id'
     };
 
-    (signIn as jest.Mock).mockResolvedValueOnce({
-      AuthenticationResult: {
-        IdToken: mockIdToken
-      }
+    (fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ success: true, idToken: mockIdToken })
     });
 
     (jose.decodeJwt as jest.Mock).mockReturnValueOnce(mockDecodedToken);
@@ -69,7 +66,10 @@ describe('LoginPage', () => {
 
     // 期待される動作の検証
     await waitFor(() => {
-      expect(signIn).toHaveBeenCalledWith('test@example.com', 'password123');
+      expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/auth/login'), expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ email: 'test@example.com', password: 'password123' })
+      }));
       expect(mockSetUser).toHaveBeenCalledWith({
         email: mockDecodedToken.email,
         userId: mockDecodedToken.sub,
@@ -81,7 +81,10 @@ describe('LoginPage', () => {
 
   it('ログインに失敗した場合、エラーメッセージが表示される', async () => {
     // ログイン失敗のモックを設定
-    (signIn as jest.Mock).mockRejectedValueOnce(new Error('Login failed'));
+    (fetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({ error: 'ログインに失敗しました' })
+    });
 
     render(<LoginPage />);
 
