@@ -113,13 +113,7 @@ export const historyAPI = {
   }
 };
 
-/* ------------------------------------------------------------------
-   New API: Top Page Display API
-   This API retrieves the top page display information grouped
-   by display type from the backend (/api/top).
----------------------------------------------------------------------*/
-
-// Type definitions for top page display response
+// Top Page Display API
 interface TopPageDisplay {
   id: number;
   displayType: string;
@@ -158,7 +152,7 @@ const executeRequest = async <T = Record<string, unknown>>(
 ): Promise<T> => {
   const baseUrl = typeof window !== 'undefined' 
     ? window.location.origin 
-    : process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000';
+    : 'http://localhost:3000';
 
   const response = await fetch(`${baseUrl}${endpoint}`, {
     method,
@@ -174,4 +168,4 @@ const executeRequest = async <T = Record<string, unknown>>(
   }
 
   return response.json();
-}; 
+};
