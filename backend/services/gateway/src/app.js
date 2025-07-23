@@ -23,14 +23,19 @@ const openApiSpec = YAML.load(fs.readFileSync(path.join(__dirname, '../openapi.y
 
 const app = express();
 
-app.use(helmet());
-app.use(createTimeoutMiddleware(60000)); // 60 seconds for gateway
-app.use(cors({
-  origin: true,
+// CORS設定を環境別に切り替え
+const corsOptions = {
+  origin: process.env.NODE_ENV === 'production' 
+    ? [process.env.FRONTEND_URL || 'https://yourdomain.com'] 
+    : true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'cloud-shop-correlation-id']
-}));
+};
+
+app.use(helmet());
+app.use(createTimeoutMiddleware(60000)); // 60 seconds for gateway
+app.use(cors(corsOptions));
 
 app.use(express.json());
 app.use(correlationId);
@@ -72,6 +77,12 @@ app.use('/cloud-shop/auth/**', createProxyMiddleware({
     if (req.correlationId) {
       proxyReq.setHeader('cloud-shop-correlation-id', req.correlationId);
     }
+  },
+  onProxyRes: (proxyRes, req, res) => {
+    // 認証APIはキャッシュしない
+    proxyRes.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, private';
+    proxyRes.headers['Pragma'] = 'no-cache';
+    proxyRes.headers['Expires'] = '0';
   }
 }));
 
@@ -85,6 +96,10 @@ app.use('/cloud-shop/users/**', createProxyMiddleware({
     if (req.correlationId) {
       proxyReq.setHeader('cloud-shop-correlation-id', req.correlationId);
     }
+  },
+  onProxyRes: (proxyRes, req, res) => {
+    // ユーザー情報は短時間キャッシュ
+    proxyRes.headers['Cache-Control'] = 'private, max-age=300'; // 5分
   }
 }));
 
@@ -107,10 +122,13 @@ app.use('/cloud-shop/accounts/**',
       if (req.correlationId) {
         proxyReq.setHeader('cloud-shop-correlation-id', req.correlationId);
       }
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      // アカウント情報は短時間キャッシュ
+      proxyRes.headers['Cache-Control'] = 'private, max-age=300'; // 5分
     }
   })
 );
-
 
 app.use('/cloud-shop/products/**', createProxyMiddleware({
   target: process.env.PRODUCTS_SERVICE_URL || 'http://localhost:8083',
@@ -122,6 +140,10 @@ app.use('/cloud-shop/products/**', createProxyMiddleware({
     if (req.correlationId) {
       proxyReq.setHeader('cloud-shop-correlation-id', req.correlationId);
     }
+  },
+  onProxyRes: (proxyRes, req, res) => {
+    // 商品情報は中程度のキャッシュ
+    proxyRes.headers['Cache-Control'] = 'public, max-age=1800'; // 30分
   }
 }));
 
@@ -137,6 +159,12 @@ app.use('/cloud-shop/cart/**',
       if (req.correlationId) {
         proxyReq.setHeader('cloud-shop-correlation-id', req.correlationId);
       }
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      // カート情報はキャッシュしない
+      proxyRes.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, private';
+      proxyRes.headers['Pragma'] = 'no-cache';
+      proxyRes.headers['Expires'] = '0';
     }
   })
 );
@@ -153,6 +181,10 @@ app.use('/cloud-shop/orders/**',
       if (req.correlationId) {
         proxyReq.setHeader('cloud-shop-correlation-id', req.correlationId);
       }
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      // 注文情報は短時間キャッシュ
+      proxyRes.headers['Cache-Control'] = 'private, max-age=600'; // 10分
     }
   })
 );
@@ -169,6 +201,10 @@ app.use('/cloud-shop/analytics/**',
       if (req.correlationId) {
         proxyReq.setHeader('cloud-shop-correlation-id', req.correlationId);
       }
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      // 分析データは中程度のキャッシュ
+      proxyRes.headers['Cache-Control'] = 'private, max-age=1800'; // 30分
     }
   })
 );
@@ -183,6 +219,10 @@ app.use('/cloud-shop/content/**', createProxyMiddleware({
     if (req.correlationId) {
       proxyReq.setHeader('cloud-shop-correlation-id', req.correlationId);
     }
+  },
+  onProxyRes: (proxyRes, req, res) => {
+    // コンテンツは長時間キャッシュ
+    proxyRes.headers['Cache-Control'] = 'public, max-age=3600'; // 1時間
   }
 }));
 
