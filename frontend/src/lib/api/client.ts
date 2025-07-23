@@ -35,53 +35,77 @@ interface CartItem {
   addedAt?: Date;
 }
 
+// 統一されたAPIレスポンス型
+interface ApiResponse<T = any> {
+  timestamp: string;
+  status: number;
+  data?: T;
+  success: boolean;
+  message?: string;
+  correlationId?: string;
+}
+
+// 統一されたエラーレスポンス型
+interface ApiError {
+  timestamp: string;
+  status: number;
+  error: string;
+  message: string;
+  path: string;
+  correlationId?: string;
+  debug?: {
+    stack: string;
+    originalError: string;
+  };
+}
+
 // APIベースURLはNext.jsのpublic環境変数のみを参照（windowやtypeof判定は不要）
 const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8072';
 
 // 認証関連API
 export const authAPI = {
   register: async (email: string, password: string, name: string) => {
-    return executeRequest('/cloud-shop/auth/register', 'POST', { email, password, name });
+    return executeRequest<ApiResponse>('/cloud-shop/auth/register', 'POST', { email, password, name });
   },
   login: async (email: string, password: string) => {
-    return executeRequest('/cloud-shop/auth/login', 'POST', { email, password }, { credentials: 'include' });
+    return executeRequest<ApiResponse>('/cloud-shop/auth/login', 'POST', { email, password }, { credentials: 'include' });
   },
   confirm: async (email: string, code: string) => {
-    return executeRequest('/cloud-shop/auth/confirm', 'POST', { email, code });
+    return executeRequest<ApiResponse>('/cloud-shop/auth/confirm', 'POST', { email, code });
   },
   logout: async () => {
-    return executeRequest('/cloud-shop/auth/logout', 'POST', undefined, { credentials: 'include' });
+    return executeRequest<ApiResponse>('/cloud-shop/auth/logout', 'POST', undefined, { credentials: 'include' });
   },
   verify: async () => {
-    return executeRequest('/cloud-shop/auth/verify', 'POST');
+    return executeRequest<ApiResponse>('/cloud-shop/auth/verify', 'POST');
   },
   refresh: async (refreshToken: string) => {
-    return executeRequest('/cloud-shop/auth/refresh', 'POST', { refreshToken });
+    return executeRequest<ApiResponse>('/cloud-shop/auth/refresh', 'POST', { refreshToken });
   },
   revoke: async (token: string) => {
-    return executeRequest('/cloud-shop/auth/revoke', 'POST', { token });
+    return executeRequest<ApiResponse>('/cloud-shop/auth/revoke', 'POST', { token });
   }
 };
 
 // カート管理API
 export const cartAPI = {
   addToCart: async (productId: string) => {
-    return executeRequest('/cloud-shop/cart', 'POST', { productId });
+    return executeRequest<ApiResponse>('/cloud-shop/cart', 'POST', { productId });
   },
   readdToCart: async (productId: string) => {
-    return executeRequest('/cloud-shop/cart/readd-items', 'POST', { productId });
+    return executeRequest<ApiResponse>('/cloud-shop/cart/readd-items', 'POST', { productId });
   },
-  getCartItems: async (): Promise<{ cartItems: CartItem[] }> => {
-    return executeRequest<{ cartItems: CartItem[] }>('/cloud-shop/cart', 'GET');
+  getCartItems: async (): Promise<ApiResponse<{ cartItems: CartItem[] }>> => {
+    return executeRequest<ApiResponse<{ cartItems: CartItem[] }>>('/cloud-shop/cart', 'GET');
   },
   updateCartItemQuantity: async (cartItemId: number, quantity: number) => {
-    return executeRequest(`/cloud-shop/cart/${cartItemId}`, 'PATCH', { quantity });
+    return executeRequest<ApiResponse>(`/cloud-shop/cart/${cartItemId}`, 'PATCH', { quantity });
   },
   removeCartItem: async (cartItemId: number) => {
-    return executeRequest(`/cloud-shop/cart/${cartItemId}`, 'DELETE');
+    return executeRequest<ApiResponse>(`/cloud-shop/cart/${cartItemId}`, 'DELETE');
   },
-  getCartSummary: async (): Promise<{ subtotal: number }> => {
-    return executeRequest('/cloud-shop/cart/summary', 'GET');
+  getCartSummary: async (): Promise<ApiResponse<{ subtotal: number }>> => {
+    return executeRequest<ApiResponse<{ subtotal: number }>>('/cloud-shop/cart/summary', 'GET');
   }
 };
 
@@ -96,7 +120,7 @@ export const checkoutAPI = {
     deliveryDate: string,
     paymentMethod: 'credit_card' | 'bank_transfer'
   ) => {
-    return executeRequest('/cloud-shop/checkout/confirm', 'POST', {
+    return executeRequest<ApiResponse>('/cloud-shop/checkout/confirm', 'POST', {
       name,
       address,
       cardNumber,
@@ -110,34 +134,34 @@ export const checkoutAPI = {
 
 // 購入履歴管理API
 export const orderAPI = {
-  fetchorders: async (): Promise<{ orders: Order[] }> => {
-    return executeRequest('/cloud-shop/orders', 'GET');
+  fetchorders: async (): Promise<ApiResponse<{ orders: Order[] }>> => {
+    return executeRequest<ApiResponse<{ orders: Order[] }>>('/cloud-shop/orders', 'GET');
   },
   return: async (orderId: string, productId: string) => {
-    return executeRequest('/cloud-shop/orders/return', 'POST', { orderId, productId });
+    return executeRequest<ApiResponse>('/cloud-shop/orders/return', 'POST', { orderId, productId });
   },
   review: async (orderId: string, productId: string) => {
-    return executeRequest('/cloud-shop/orders/review', 'POST', { orderId, productId });
+    return executeRequest<ApiResponse>('/cloud-shop/orders/review', 'POST', { orderId, productId });
   }
 };
 
 // 商品情報API
 export const productAPI = {
-  getProducts: async (): Promise<{ products: Product[] }> => {
-    return executeRequest('/cloud-shop/products', 'GET', undefined, { cache: 'no-store' });
+  getProducts: async (): Promise<ApiResponse<{ products: Product[] }>> => {
+    return executeRequest<ApiResponse<{ products: Product[] }>>('/cloud-shop/products', 'GET', undefined, { cache: 'no-store' });
   },
-  getProduct: async (productId: string): Promise<{ product: Product }> => {
-    return executeRequest(`/cloud-shop/products/${productId}`, 'GET', undefined, { cache: 'no-store' });
+  getProduct: async (productId: string): Promise<ApiResponse<{ product: Product }>> => {
+    return executeRequest<ApiResponse<{ product: Product }>>(`/cloud-shop/products/${productId}`, 'GET', undefined, { cache: 'no-store' });
   },
-  getProductsByCategory: async (categoryId: number): Promise<{ products: Product[] }> => {
-    return executeRequest(`/cloud-shop/products/category/${categoryId}`, 'GET', undefined, { cache: 'no-store' });
+  getProductsByCategory: async (categoryId: number): Promise<ApiResponse<{ products: Product[] }>> => {
+    return executeRequest<ApiResponse<{ products: Product[] }>>(`/cloud-shop/products/category/${categoryId}`, 'GET', undefined, { cache: 'no-store' });
   }
 };
 
 // 閲覧履歴API
 export const historyAPI = {
   recordView: async (productId: string, userId: string) => {
-    return executeRequest('/cloud-shop/analytics/view-history', 'POST', { productId }, {
+    return executeRequest<ApiResponse>('/cloud-shop/analytics/view-history', 'POST', { productId }, {
       headers: { 'x-user-id': userId }
     });
   }
@@ -168,31 +192,62 @@ interface TopPageResponse {
 }
 
 export const topAPI = {
-  getTopPageDisplay: async (): Promise<TopPageResponse> => {
-    return executeRequest<TopPageResponse>("/cloud-shop/content/top", "GET", undefined, { cache: "no-store" });
+  getTopPageDisplay: async (): Promise<ApiResponse<TopPageResponse>> => {
+    return executeRequest<ApiResponse<TopPageResponse>>("/cloud-shop/content/top", "GET", undefined, { cache: "no-store" });
   }
 };
 
-// リクエスト実行ユーティリティ
-const executeRequest = async <T = Record<string, unknown>>(
+// リクエスト実行ユーティリティ（エラーハンドリング強化版）
+const executeRequest = async <T = ApiResponse>(
   endpoint: string,
   method: string,
   body?: Record<string, unknown>,
   options?: RequestInit
 ): Promise<T> => {
-  // baseUrlはバックエンドAPIのURL
-  const response = await fetch(`${baseUrl}${endpoint}`, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: body ? JSON.stringify(body) : undefined,
-    ...options
-  });
+  try {
+    // baseUrlはバックエンドAPIのURL
+    const response = await fetch(`${baseUrl}${endpoint}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: body ? JSON.stringify(body) : undefined,
+      ...options
+    });
 
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.error || 'Request failed');
+    const responseData = await response.json();
+
+    if (!response.ok) {
+      // バックエンドの統一エラーレスポンス形式に対応
+      const errorData = responseData as ApiError;
+      const error = new Error(errorData.message || 'Request failed');
+      
+      // エラーオブジェクトに追加情報を付与
+      (error as any).status = errorData.status;
+      (error as any).errorCode = errorData.error;
+      (error as any).path = errorData.path;
+      (error as any).correlationId = errorData.correlationId;
+      (error as any).timestamp = errorData.timestamp;
+      
+      // 開発環境ではデバッグ情報も含める
+      if (process.env.NODE_ENV === 'development' && errorData.debug) {
+        (error as any).debug = errorData.debug;
+      }
+      
+      throw error;
+    }
+
+    // 成功レスポンスはバックエンドの統一形式をそのまま返す
+    return responseData as T;
+  } catch (error) {
+    // ネットワークエラーやJSON解析エラーの場合
+    if (error instanceof TypeError) {
+      const networkError = new Error('Network error or invalid response format');
+      (networkError as any).status = 0;
+      (networkError as any).errorCode = 'NETWORK_ERROR';
+      throw networkError;
+    }
+    
+    // その他のエラーはそのまま再スロー
+    throw error;
   }
-
-  return response.json();
 };
