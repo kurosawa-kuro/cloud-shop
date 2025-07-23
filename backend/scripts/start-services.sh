@@ -14,17 +14,17 @@ echo "✅ BuildKit無効化完了"
 
 # 既存コンテナとネットワークをクリーンアップ
 echo "🧹 既存コンテナとネットワークをクリーンアップ中..."
-docker-compose down --remove-orphans 2>/dev/null || true
+docker compose down --remove-orphans 2>/dev/null || true
 docker network prune -f 2>/dev/null || true
 echo "✅ クリーンアップ完了"
 
 # インフラストラクチャサービスのみ起動
 echo "🏗️ インフラストラクチャサービスを起動中..."
-docker-compose up -d postgres zookeeper kafka
+docker compose up -d postgres zookeeper kafka
 
 # PostgreSQLの起動を待機
 echo "⏳ PostgreSQLの起動を待機中..."
-until docker-compose exec -T postgres pg_isready -U cloud-shop; do
+until docker compose exec -T postgres pg_isready -U cloud-shop; do
   echo "PostgreSQL起動中..."
   sleep 5
 done
@@ -32,7 +32,7 @@ echo "✅ PostgreSQL起動完了"
 
 # Keycloakの起動を待機
 echo "⏳ Keycloakの起動を待機中..."
-until docker-compose exec -T keycloak curl -f http://localhost:8080/health/ready 2>/dev/null; do
+until docker compose exec -T keycloak curl -f http://localhost:8080/health/ready 2>/dev/null; do
   echo "Keycloak起動中..."
   sleep 10
 done
@@ -40,7 +40,7 @@ echo "✅ Keycloak起動完了"
 
 # Kafkaの起動を待機
 echo "⏳ Kafkaの起動を待機中..."
-until docker-compose exec -T kafka kafka-broker-api-versions --bootstrap-server localhost:9092 2>/dev/null; do
+until docker compose exec -T kafka kafka-broker-api-versions --bootstrap-server localhost:9092 2>/dev/null; do
   echo "Kafka起動中..."
   sleep 5
 done
@@ -48,12 +48,12 @@ echo "✅ Kafka起動完了"
 
 # 全サービスの起動
 echo "🚀 全マイクロサービスを起動中..."
-docker-compose up -d
+docker compose up -d
 
 # サービス起動の確認
 echo "🔍 サービス起動状況を確認中..."
 sleep 10
-docker-compose ps
+docker compose ps
 
 echo ""
 echo "🎉 Cloud-Shop Microservices 起動完了！"
@@ -69,5 +69,5 @@ echo "  - Payments Service: http://localhost:8086"
 echo "  - Message Service: http://localhost:9010"
 echo "  - Keycloak: http://localhost:8181"
 echo ""
-echo "📝 ログ確認: docker-compose logs -f [service-name]"
-echo "🛑 停止: docker-compose down" 
+echo "📝 ログ確認: docker compose logs -f [service-name]"
+echo "🛑 停止: docker compose down"       
